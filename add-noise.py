@@ -1,5 +1,7 @@
 import random
 
+from matplotlib import pyplot as plt
+
 satisfaction_attributes = [
     "Inflight wifi service",
     "Departure/Arrival time convenient",
@@ -18,12 +20,12 @@ satisfaction_attributes = [
 ]
 
 def rand_gender():
-    if random.randint()%2 == 0:
+    if random.randint(0, 1) == 0:
         return "Female"
     return "Male"
     
 def rand_customer():
-    if random.randint()%2 == 0:
+    if random.randint(0, 1) == 0:
         return "Loyal Customer"
     return "disloyal Customer"
     
@@ -31,14 +33,14 @@ def rand_age():
     return random.randrange(7, 85)
 
 def rand_travel_type():
-    if random.randint()%2 == 0:
+    if random.randint(0, 1) == 0:
         return "Business travel"
     return "Personal Travel"
 
 def rand_class():
-    if random.randint()%2 == 0:
+    if random.randint(0, 1) == 0:
         return "Business"
-    elif random.randint()%10 > 0:
+    elif random.randint(1, 10) > 1:
         return "Eco"
     return "Eco Plus"
 
@@ -48,14 +50,20 @@ def rand_distance():
 # include_nulls: selects whether the satisfactions can be null (0 is interpreted as null).
 #   set to 0 to not include nulls, set to 1 to include nulls
 def rand_satisfaction(include_nulls = 0):
-    return random.randint()%(5+include_nulls) + 1 - include_nulls
+    return random.randint(1 - include_nulls, 5)
 
-# approximately exponential distribution, mean value for lambd calculated from train dataset
+# approximately exponential distribution, mean values for lambd selected for good-enough fit 
+#   to original data
 def rand_dep_delay():
-    random.expovariate(1.0/14.8)
-# approximately exponential distribution, mean values for lambd calculated from train dataset
+    if random.randint(1, 4) == 1:
+        return 0
+    return int(random.expovariate(1.0/25.0))
+# approximately exponential distribution, mean values for lambd selected for good-enough fit 
+#   to original data
 def rand_arr_delay():
-    return random.expovariate(1.0/15.2)
+    if random.randint(1, 4) == 1:
+        return 0
+    return int(random.expovariate(1.0/25.0))
 
 # creates random point
 # include_nulls: see rand_satisfaction
@@ -88,11 +96,11 @@ def create_rand_point(include_nulls = 0):
 # include_nulls: see rand_satisfaction
 def create_rand_cluster_based_on_point(size = 10, change_rate = 10, include_nulls = 0):
     source = create_rand_point()
-    datapoints = {} * (size-1)
-    for point in datapoints:
+    datapoints = []
+    for i in range(size):
         point = source.copy()
         for attr in source.keys():
-            if random.randint()%change_rate == 0:
+            if random.randint(0, change_rate) == 0:
                 if attr == "Gender":
                     point[attr] = rand_gender()
                 elif attr == "Customer Type":
@@ -113,11 +121,9 @@ def create_rand_cluster_based_on_point(size = 10, change_rate = 10, include_null
                     point[attr] = rand_arr_delay()
                 else:
                     print("Encountered unknown attribute: " + attr)
-    datapoints.add(source)
+        datapoints.append(point)
+    datapoints.append(source)
     return datapoints
 
 
-    
-
-
-
+print(create_rand_cluster_based_on_point(size= 3))
