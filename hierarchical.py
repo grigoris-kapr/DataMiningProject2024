@@ -34,8 +34,11 @@ def find_min_distance(distance_matrix, n):
                 minimum = distance_matrix[i][j]
     return i_min, j_min
 
+# data: the data to run on
+# clusters_num: the number of clusters at which the algorithm stops
 # type: select which algorithm to implement, True for min False for max
-def hierarcical(data, clusters_num, type=True):
+# clusters: None by default, can provide initial clusters (from k-means)
+def hierarcical(data, clusters_num, type=True, clusters=None):
     n = len(data)
     # calculate proximity matrix
     distance_matrix = np.zeros((n, n), dtype=np.float16)
@@ -49,9 +52,11 @@ def hierarcical(data, clusters_num, type=True):
     # comment out if out of memory (re-calculate manually)
     full_distance_matrix = distance_matrix.copy()
     print("Successfully allocated memory for full_distance_matrix")
+
     # each cluster is stored as a list of indexes to all the points belonging in that cluster
     # initialize with all points as discrete clusters
-    clusters = [ [i] for i in range(n) ]
+    if clusters == None: # only initialize if no clusters provided
+        clusters = [ [i] for i in range(n) ]
     # merging loop
     while len(clusters) > clusters_num:
         i_min, j_min = find_min_distance(distance_matrix, n)
