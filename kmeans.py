@@ -65,7 +65,7 @@ def kmeans(
     datapoint_dim = dataset.shape[1]
 
     if initial_centers is None:
-        initial_centers = np.random.rand(dataset_size, datapoint_dim)
+        initial_centers = np.random.rand(k, datapoint_dim)
 
     current_centers = initial_centers
 
@@ -117,13 +117,13 @@ def optimized_kmeans(
     datapoint_dim = dataset.shape[1]
 
     if initial_centers is None:
-        initial_centers = np.random.rand(dataset_size, datapoint_dim)
+        initial_centers = np.random.rand(k, datapoint_dim)
 
     current_centers = initial_centers
 
     while True:
 
-        datapoint_to_new_clusters = np.argmax(dist_metric(dataset, current_centers), axis = 1)
+        datapoint_to_new_clusters = np.argmax(dist_metric(dataset_size, current_centers), axis = 1)
 
         new_centers = []
         for i in range(k):
@@ -133,12 +133,12 @@ def optimized_kmeans(
         new_centers = np.array(new_centers)
 
         if current_centers == new_centers:
-            return new_centers
+            return new_centers, datapoint_to_new_clusters
 
         if iterations is not None:
             iterations -= 1
             if iterations == 0:
-                return new_centers
+                return new_centers, datapoint_to_new_clusters
                 
 
 

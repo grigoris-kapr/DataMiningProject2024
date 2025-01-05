@@ -1,3 +1,4 @@
+import heapq
 import time
 import numpy as np
 import pandas as pd
@@ -18,7 +19,7 @@ def dist(x, y):
             if is_nominal(attr) == True and x[attr] != y[attr]:
                 sum_dist += 1
             elif not is_nominal(attr):
-                # print(x[attr])
+                
                 sum_dist += abs( x[attr] - y[attr] ) 
     return sum_dist / sum_d 
 
@@ -26,28 +27,22 @@ def find_min_distance(distance_matrix):
     i_min = -1
     j_min = -1
     minimum = np.inf
-    for i in range(len(distance_matrix)):
-        for j in range(i):
-            if distance_matrix[i][j] < minimum:
-                i_min = i
-                j_min = j
-                minimum = distance_matrix[i][j]
+    i_min, j_min = np.unravel_index(np.argmin(distance_matrix), distance_matrix.shape)
     return i_min, j_min
 
 # data: the data to run on
 # clusters_num: the number of clusters at which the algorithm stops
 # type: select which algorithm to implement, True for min False for max
 # clusters: None by default, can provide initial clusters (from k-means)
-def hierarcical(data, clusters_num, type=True, clusters=None):
+def hierarchical(data, clusters_num, type=True, clusters=None):
     n = len(data)
     # calculate proximity matrix
-    distance_matrix = np.zeros((n, n), dtype=np.float16)
+    distance_matrix = np.full((n, n), np.inf, dtype=np.float16)
     for i in range(n):
         for j in range(i):
             distance_matrix[i][j] = dist(data[i], data[j])
         if i%100==0: print(i)
     
-
     # keep a copy of the original distance matrix to save on computaions
     # comment out if out of memory (re-calculate manually)
     full_distance_matrix = distance_matrix.copy()
@@ -122,8 +117,68 @@ def hierarcical(data, clusters_num, type=True, clusters=None):
         else:
             raise ValueError("'type' must be boolean for either complete link (false) or single ling (default/true)")
 
-    return 0
+    return clusters
 
+def fast_hierarchical(data, clusters_num, type=True, clusters=None):
+    n = len(data)
+    
+    # Create an array to hold the distances 
+    distance_matrix = np.full((n, n), np.inf, dtype=np.float16) 
+    # calculate distances and add to a heap for complexity speed-up
+    heap = []
+    for i in range(n):
+        for j in range(i):
+            distance_matrix[i][j] = dist(data[i], data[j])
+            # add to heap (negative for complete link as heapq uses min)
+            if type == True: 
+                heapq.heappush(heap, (distance_matrix[i][j], i, j))
+            else:
+                heapq.heappush(heap, (-distance_matrix[i][j], i, j))
+        if i%100==0: print(i)
+
+    # each cluster is stored as a set of indexes to all the points belonging in that cluster
+    # set is useful as we can utilize the union function + deprecate clusters (faster than other method)
+    # initialize with all points as discrete clusters
+    if clusters == None: # only initialize if no clusters provided
+        clusters = [ {i} for i in range(n) ]
+
+    while len(clusters) - clusters.count(set()) > clusters_num:
+        # if iterations > 50: return
+        # find clusters to merge
+        _, i_min, j_min = heapq.heappop(heap)
+        if not clusters[i_min] or not clusters[j_min]: continue
+        if len(clusters[j_min]) > len(clusters[i_min]):
+            temp = i_min
+            i_min = j_min
+            j_min = temp
+
+        # append the new cluster to the list and delete old ones
+        new_cluster = clusters[i_min].union(clusters[j_min])
+        clusters.append(new_cluster)
+        clusters[i_min] = set()
+        clusters[j_min] = set()
+
+        for cl in range(len(clusters) - 1):
+            if clusters[cl]:
+                
+                # new_distance = 
+                new_distance = min(distance_matrix[point1][point2] 
+                                   for point1 in clusters[cl] 
+                                   for point2 in clusters[len(clusters)-1] 
+                                   )
+                # use trig matrix
+                if cl > len(clusters):
+                    pair = (cl, len(clusters)-1)
+                else:
+                    pair = (len(clusters)-1, cl)
+                heapq.heappush(heap, (new_distance, pair[0], pair[1]))
+                # heapq.heappush(heap, (new_distance, cl, len(clusters)-1))
+
+    final_clusters = []
+    for cluster in clusters:
+        if cluster != set(): 
+            final_clusters.append(cluster)
+    return final_clusters
 
 # read data into data
 data = pd.read_csv('test_2000.csv', sep=',',header=0).values
@@ -138,6 +193,14 @@ for i in range(len(data)):
             data[i][attr] = None
 
 start = time.time()
-hierarcical(data, 5)
+output1 = hierarchical(data, 9)
 end = time.time()
 print(end-start)
+
+# start = time.time()
+# output2 = fast_hierarchical(data, 9)
+# end = time.time()
+# print(end-start)
+
+# print(output1)
+# print(output2)
