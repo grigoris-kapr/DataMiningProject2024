@@ -158,30 +158,46 @@ def kmeans(
 
 def optimized_kmeans(
     k: int, 
-    dataset: np.ndarray, 
+    dataset: np.ndarray | cp.ndarray, 
     dist_metric, 
+    tolerance: float = 1e-5, 
     iterations: int = None, 
-    initial_centers: np.ndarray = None,  # None option picks the centers randomly
+    initial_centers: np.ndarray | cp.ndarray = None,  # None option picks the centers randomly
+    nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code should run on a gpu
 ):
+    if nplikelib is None:
+        nplike = np
+    else:
+        nplike = name_to_lib[nplikelib]
+
+    dataset_size = dataset.shape[0]
     datapoint_dim = dataset.shape[1]
 
     if initial_centers is None:
-        initial_centers = np.random.rand(k, datapoint_dim)
+        initial_centers = nplike.random.rand(k, datapoint_dim)
 
     current_centers = initial_centers
 
     while True:
 
-        datapoint_to_new_clusters = np.argmax(dist_metric(dataset, current_centers), axis = 1)
+        datapoint_to_new_clusters = nplike.argmax(dist_metric(dataset, current_centers), axis = 1)
 
-        new_centers = []
-        for i in range(k):
-            new_centers.append(
-                np.sum(dataset[np.where(datapoint_to_new_clusters == i)], axis = 0) / datapoint_dim
-            )
-        new_centers = np.array(new_centers)
+        new_centers = nplike.zeros_like(current_centers)
 
-        if (current_centers == new_centers).all():
+        datapoint_to_new_cluster_one_hot_like = nplike.zeros((dataset_size, k))
+        datapoint_to_new_cluster_one_hot_like[nplike.arange(dataset_size), datapoint_to_new_clusters] = 1
+
+        datapoints_per_cluster = nplike.sum(datapoint_to_new_cluster_one_hot_like, axis = 0)
+
+        empty_clusters = datapoints_per_cluster == 0
+
+        vector_of_each_cluster_sum = nplike.matmul(datapoint_to_new_cluster_one_hot_like.T, dataset)
+
+        new_centers[empty_clusters] = current_centers[empty_clusters]
+
+        new_centers[~empty_clusters] = vector_of_each_cluster_sum[~empty_clusters] / datapoints_per_cluster[~empty_clusters][:, None]
+
+        if (nplike.abs(current_centers - new_centers) < tolerance).all():
             return new_centers
 
         if iterations is not None:
