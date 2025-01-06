@@ -149,24 +149,15 @@ def dist(x, y, asymetric_attributes=[], nominal_attributes=[]):
                 sum_dist += abs( x[attr] - y[attr] ) 
     return sum_dist / sum_d 
 
-# data: the data to run on
-# clusters_num: the number of clusters at which the algorithm stops
-# type: select which algorithm to implement, True for min False for max
-# clusters: None by default, can provide initial clusters (from k-means)
 def fast_hierarchical(
         data:np.ndarray,
-        clusters_num,
-        type:bool = True,
-        initial_clusters: list[list[int]] = None
+        clusters_num, # the number of clusters at which the algorithm stops
+        algorithm:bool = True, # True for single link/min, False for complete link/max
+        initial_clusters: list[list[int]] = None # None by default, can provide initial clusters (from k-means)
 ):
     n = len(data)
     
     # Create distance matrix
-    """ distance_matrix = np.full((n, n), np.inf, dtype=np.float16) 
-    for i in range(n):
-        for j in range(i):
-            distance_matrix[i][j] = dist(data[i], data[j]) 
-        if i%100==0: print(i) """
     distance_matrix = distance_metric_for_discreet_and_continuous_with_assymetric_support(
         data,
         data,
@@ -188,7 +179,7 @@ def fast_hierarchical(
         # STEP 1
         clusters = { i: [i] for i in range(n)}
         # STEP 2
-        if type == True:
+        if algorithm == True:
             for i in range(n):
                 for j in range(i):
                     heapq.heappush(heap, (distance_matrix[i][j], i, j))
@@ -200,60 +191,53 @@ def fast_hierarchical(
 
     else:
         # STEP 1
-        clusters = { int: list[int] }
-        for cl_id in range(initial_clusters):
-            clusters[cl_id] = initial_clusters[cluster_id]
+        clusters = { i: [] for i in range(len(initial_clusters)) }
+        for cl_id in range(len(initial_clusters)):
+            clusters[cl_id] = initial_clusters[cl_id].copy()
         # STEP 2
         if type == True:
             for cl1 in range(len(clusters)):
-                for cl2 in range(len(clusters)):
+                for cl2 in range(cl1):
                     min_cluster_dist = np.min(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
                     heapq.heappush(heap, (min_cluster_dist, cl1, cl2))
         else:
             for cl1 in range(len(clusters)):
-                for cl2 in range(len(clusters)):
+                for cl2 in range(cl1):
                     # max dist instead of min
                     max_cluster_dist = np.max(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
                     # negativ because heapq always uses min
                     heapq.heappush(heap, (max_cluster_dist, cl1, cl2))
 
-    # keep track of valid cluster ids because heapq may pop a 
-    # cluster that has already been merged into another one
-    valid_cluster_ids = { i for i in range(len(clusters)) }
-
     # initialize id for next cluster to be created and iterate on every loop
     # this is slightly faster than len(clusters) and also works with deleting old clusters
     new_cluster_id = len(clusters) - 1 # -1 because it's iterated before reference
 
-
-    while len(valid_cluster_ids) > clusters_num:
+    while len(clusters) > clusters_num:
         # find clusters to merge
         _, i_min, j_min = heapq.heappop(heap)
-        if not i_min in valid_cluster_ids or not j_min in valid_cluster_ids: 
+        if not i_min in clusters.keys() or not j_min in clusters.keys(): 
             continue
 
         # add the new cluster to the list 
         new_cluster = np.concatenate((clusters[i_min], clusters[j_min]), axis=0)
         new_cluster_id += 1
-        clusters[new_cluster_id] = new_cluster
-        # and deprecate old ones
-        valid_cluster_ids.remove(i_min)
+        # and delete old ones
         del clusters[i_min]
-        valid_cluster_ids.remove(j_min)
         del clusters[j_min]
 
-        if type == True:
-            for cluster_id in valid_cluster_ids:
+        if algorithm == True:
+            for cluster_id in clusters.keys():
                 # calculate distance between new_cluster and every other cluster
                 min_dist = np.min(distance_matrix[clusters[cluster_id]].transpose()[new_cluster])
                 heapq.heappush(heap, (min_dist, new_cluster_id, cluster_id))
         else:
-            for cluster_id in valid_cluster_ids:
+            for cluster_id in clusters.keys():
                 # calculate distance between new_cluster and every other cluster
                 max_dist = np.max(distance_matrix[clusters[cluster_id]].transpose()[new_cluster])
                 heapq.heappush(heap, (-max_dist, new_cluster_id, cluster_id))
 
-        valid_cluster_ids.add(new_cluster_id)
+        # add now so as not to exclude in the earlier loops
+        clusters[new_cluster_id] = new_cluster
 
     return clusters
 
@@ -280,29 +264,30 @@ if __name__ == '__main__':
         discreet_attributes = [0, 1, 3, 4], 
         continuous_attributes = [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
     )
-    """ 
+    
     kmeans_output = sklearn.cluster.KMeans(
-        n_clusters=np.ceil(len(normalized_dataset)/5).astype(np.int32),
+        n_clusters=np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32),
         init='random'
         ).fit(normalized_dataset)
 
-    # print(kmeans_output.labels_)
-
     kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output.labels_)
-    """
+    print("Clusters from kmeans:")
+    for i in range(len(kmeans_clusters)):
+        print(i, ": ", kmeans_clusters[i])
 
     # for cluster in kmeans_clusters: print(cluster)
     start = time.time()
     hierarchical_output = fast_hierarchical(
         normalized_dataset, 
-        clusters_num=2 # , 
-        # clusters=kmeans_clusters
+        clusters_num=5,
+        algorithm=True,
+        initial_clusters=kmeans_clusters
     )
     end = time.time()
     print(end - start)
 
     print("Final output:")
-    # for cluster in hierarchical_output: print(cluster)
+    for cluster in hierarchical_output.items(): print(cluster)
 
     """ optimized_kmeans(
         k = 10, 
