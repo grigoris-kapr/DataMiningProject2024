@@ -143,7 +143,6 @@ def fast_hierarchical(data, clusters_num, type=True, clusters=None):
         clusters = [ {i} for i in range(n) ]
 
     while len(clusters) - clusters.count(set()) > clusters_num:
-        # if iterations > 50: return
         # find clusters to merge
         _, i_min, j_min = heapq.heappop(heap)
         if not clusters[i_min] or not clusters[j_min]: continue

@@ -1,0 +1,6 @@
+{
+    "rainbow_csv.virtual_alignment_mode": "always",
+    "[csv]": {
+        "editor.inlayHints.maximumLength": 0
+    }
+}

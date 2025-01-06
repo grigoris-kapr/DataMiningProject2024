@@ -194,7 +194,7 @@ def optimized_kmeans(
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv(path_to_dataset, header = 1).values
+    dataset = pd.read_csv(path_to_dataset, header = 0).values
 
     # discard columns not wanted
     dataset = dataset[:, 2:-1]
