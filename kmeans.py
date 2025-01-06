@@ -162,8 +162,8 @@ def optimized_kmeans(
     dist_metric, 
     tolerance: float = 1e-5, 
     iterations: int = None, 
-    initial_centers: np.ndarray | cp.ndarray = None,  # None option picks the centers randomly
-    nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code should run on a gpu
+    initial_centers: np.ndarray = None,  # None option picks the centers randomly
+    nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
 ):
     if nplikelib is None:
         nplike = np
@@ -180,7 +180,7 @@ def optimized_kmeans(
 
     while True:
 
-        datapoint_to_new_clusters = nplike.argmax(dist_metric(dataset, current_centers), axis = 1)
+        datapoint_to_new_clusters = nplike.argmin(dist_metric(dataset, current_centers), axis = 1)
 
         new_centers = nplike.zeros_like(current_centers)
 
@@ -197,13 +197,16 @@ def optimized_kmeans(
 
         new_centers[~empty_clusters] = vector_of_each_cluster_sum[~empty_clusters] / datapoints_per_cluster[~empty_clusters][:, None]
 
-        if (nplike.abs(current_centers - new_centers) < tolerance).all():
+        # if (nplike.abs(current_centers - new_centers) < tolerance).all():
+        if (nplike.linalg.norm(current_centers - new_centers) < tolerance):
             return new_centers
 
         if iterations is not None:
             iterations -= 1
             if iterations == 0:
                 return new_centers
+            
+        current_centers = new_centers
                 
 
 
