@@ -174,43 +174,73 @@ def fast_hierarchical(
         continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
         assymetric_attributes=None
     )
-    
 
-    # each cluster is stored as a set of indexes to all the points belonging in that cluster
-    # set is useful as we can utilize the union function + deprecate clusters (faster than other method)
-    # initialize with all points as discrete clusters
-    if initial_clusters == None: # only initialize if no clusters provided
+    # add distances to a heap for complexity speed-up
+    # distances to be added depend on initial_clusters and are negative for complete link
+    heap = []
 
-        # add to a heap for complexity speed-up
-        heap = []
-        for i in range(n):
-            for j in range(i):
-                # negative for complete link as heapq uses min
-                if type == True: 
+    # STEP 1: each cluster is stored as a dict int -> list[int]
+    # the keys are the cluster ids and the items are datapoint indexes. when there are no initial_clusters 
+    # provided, the cluster ids are initialized to the same as the index in the one-point list
+    # STEP 2: add cluster distances to heap (entries in the data matrix when no initial_clusters provided; 
+    # cluster distances when initial_clusters are provided)
+    if initial_clusters == None:
+        # STEP 1
+        clusters = { i: [i] for i in range(n)}
+        # STEP 2
+        if type == True:
+            for i in range(n):
+                for j in range(i):
                     heapq.heappush(heap, (distance_matrix[i][j], i, j))
-                else:
+        else:
+            for i in range(n):
+                for j in range(i):
+                    # negative because heapq always uses min
                     heapq.heappush(heap, (-distance_matrix[i][j], i, j))
 
-        clusters = { i: [i] for i in range(n)}
+    else:
+        # STEP 1
+        clusters = { int: list[int] }
+        for cl_id in range(initial_clusters):
+            clusters[cl_id] = initial_clusters[cluster_id]
+        # STEP 2
+        if type == True:
+            for cl1 in range(len(clusters)):
+                for cl2 in range(len(clusters)):
+                    min_cluster_dist = np.min(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
+                    heapq.heappush(heap, (min_cluster_dist, cl1, cl2))
+        else:
+            for cl1 in range(len(clusters)):
+                for cl2 in range(len(clusters)):
+                    # max dist instead of min
+                    max_cluster_dist = np.max(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
+                    # negativ because heapq always uses min
+                    heapq.heappush(heap, (max_cluster_dist, cl1, cl2))
 
-        valid_cluster_ids = {i for i in range(n)}
+    # keep track of valid cluster ids because heapq may pop a 
+    # cluster that has already been merged into another one
+    valid_cluster_ids = { i for i in range(len(clusters)) }
+
+    # initialize id for next cluster to be created and iterate on every loop
+    # this is slightly faster than len(clusters) and also works with deleting old clusters
+    new_cluster_id = len(clusters) - 1 # -1 because it's iterated before reference
+
 
     while len(valid_cluster_ids) > clusters_num:
         # find clusters to merge
         _, i_min, j_min = heapq.heappop(heap)
         if not i_min in valid_cluster_ids or not j_min in valid_cluster_ids: 
             continue
-        """ print("merging ", j_min, " onto ", i_min)
-        print(clusters[i_min])
-        print(clusters[j_min]) """
 
         # add the new cluster to the list 
         new_cluster = np.concatenate((clusters[i_min], clusters[j_min]), axis=0)
-        new_cluster_id = len(clusters) # id to be added to valid_cluster_ids after updating heap
+        new_cluster_id += 1
         clusters[new_cluster_id] = new_cluster
         # and deprecate old ones
         valid_cluster_ids.remove(i_min)
+        del clusters[i_min]
         valid_cluster_ids.remove(j_min)
+        del clusters[j_min]
 
         if type == True:
             for cluster_id in valid_cluster_ids:
@@ -229,7 +259,7 @@ def fast_hierarchical(
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv("test_2000.csv", header = 0).values
+    dataset = pd.read_csv("test_5000.csv", header = 0).values
 
     # discard columns not wanted
     dataset = dataset[:, 2:-1]
