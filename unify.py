@@ -85,17 +85,6 @@ def distance_metric_for_discreet_and_continuous_with_assymetric_support(
     # that are not assymetric and both 0
     return (sum_of_nominal + sum_of_continuous) / number_of_attributes_that_count
 
-def our_similarity_metric(dataset, centers):
-    return distance_metric_for_discreet_and_continuous_with_assymetric_support(
-        dataset = dataset, 
-        centers = centers, 
-        nominal_attributes = [0, 1, 3, 4], 
-        continuous_attributes = np.setdiff1d(np.arange(dataset.shape[1]), np.array([0, 1, 3, 4])).tolist(), 
-        assymetric_attributes = None
-    )
-
-
-
 def optimized_kmeans(
     k: int, 
     dataset: np.ndarray, 
@@ -144,7 +133,7 @@ def fast_hierarchical(
         initial_clusters: list[list[int]] = None # None by default, can provide initial clusters (from k-means)
 ):
     n = len(data)
-    
+    start_dist = time.time()
     # Create distance matrix
     distance_matrix = np.full((n,n), np.inf, dtype=np.float16)
     for i in range(n):
@@ -156,11 +145,8 @@ def fast_hierarchical(
             assymetric_attributes=None
         )
         distance_matrix[i] = interim_distance_matrix[0]
-        # print(distance_matrix[n-1])
-    print(distance_matrix[0])
-    print(distance_matrix[1])
-    print(distance_matrix[2])
-    print(distance_matrix[3])
+    end_dist = time.time()
+    print("Dist. Matrix calculation time: ", end_dist - start_dist)
 
 
     # add distances to a heap for complexity speed-up
@@ -192,7 +178,7 @@ def fast_hierarchical(
         for cl_id in range(len(initial_clusters)):
             clusters[cl_id] = initial_clusters[cl_id].copy()
         # STEP 2
-        if type == True:
+        if algorithm == True:
             for cl1 in range(len(clusters)):
                 for cl2 in range(cl1):
                     min_cluster_dist = np.min(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
@@ -203,7 +189,7 @@ def fast_hierarchical(
                     # max dist instead of min
                     max_cluster_dist = np.max(distance_matrix[clusters[cl1]].transpose()[clusters[cl2]])
                     # negativ because heapq always uses min
-                    heapq.heappush(heap, (max_cluster_dist, cl1, cl2))
+                    heapq.heappush(heap, (-max_cluster_dist, cl1, cl2))
 
     # initialize id for next cluster to be created and iterate on every loop
     # this is slightly faster than len(clusters) and also works with deleting old clusters
@@ -215,7 +201,7 @@ def fast_hierarchical(
         if not i_min in clusters.keys() or not j_min in clusters.keys(): 
             continue
 
-        # add the new cluster to the list 
+        # create the new cluster for distance calculations
         new_cluster = np.concatenate((clusters[i_min], clusters[j_min]), axis=0)
         new_cluster_id += 1
         # and delete old ones
@@ -226,15 +212,19 @@ def fast_hierarchical(
             for cluster_id in clusters.keys():
                 # calculate distance between new_cluster and every other cluster
                 min_dist = np.min(distance_matrix[clusters[cluster_id]].transpose()[new_cluster])
-                heapq.heappush(heap, (min_dist, new_cluster_id, cluster_id))
+                min_id = min(new_cluster_id, cluster_id)
+                max_id = max(new_cluster_id, cluster_id)
+                heapq.heappush(heap, (min_dist, max_id, min_id))
         else:
             for cluster_id in clusters.keys():
                 # calculate distance between new_cluster and every other cluster
                 max_dist = np.max(distance_matrix[clusters[cluster_id]].transpose()[new_cluster])
-                heapq.heappush(heap, (-max_dist, new_cluster_id, cluster_id))
+                min_id = min(new_cluster_id, cluster_id)
+                max_id = max(new_cluster_id, cluster_id)
+                heapq.heappush(heap, (-max_dist, max_id, min_id))
 
         # add now so as not to exclude in the earlier loops
-        clusters[new_cluster_id] = new_cluster
+        clusters[new_cluster_id] = new_cluster.copy()
     
     
     return list(clusters.values())
@@ -328,7 +318,7 @@ Global_keep_columns = [
     8, # Inflight wifi service
     9, # Departure/Arrival time convenient
     10, # Ease of Online booking
-    # 11, # Gate location
+    11, # Gate location
     # 12, # Food and drink
     # 13, # Online boarding
     14, # Seat comfort
@@ -381,14 +371,15 @@ Global_continuous_cols = [
 
 if __name__ == '__main__':
 
-    normalized_dataset = import_and_preprocess_data("test_5000.csv")
+    normalized_dataset = import_and_preprocess_data("train.csv")
 
     normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
     
     # =================================================================================================
     # Where the magic happens
-    k1 = 10 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
-    k2 = 4
+    k1 = 30 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
+    k2 = 6
+
     kmeans_output = sklearn.cluster.KMeans(
         n_clusters= k1,
         init='random',
@@ -398,22 +389,23 @@ if __name__ == '__main__':
     kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output.labels_)
 
     # Time and plot hierarchical alg. to bring the clusters down from k1 to k2
-    """ start = time.time()
+    start = time.time()
     hierarchical_output = fast_hierarchical(
         normalized_dataset, 
-        clusters_num=3,
+        clusters_num=k2,
         algorithm=True,
         initial_clusters=kmeans_clusters
     )
     end = time.time()
-    print(end - start) """
+    print(end - start)
+    plot_clustering(normalized_dataset, hierarchical_output)
 
     # PLOT IT ALL
     # Plot every iteration of the hierarchical algorithm, starting with 
     # the 0-th (the output of k-means)
     # cluster colors and symbols don't stay the same between iterations 
     # (will probably need changing the plot_clustering function)
-    current_clusters = kmeans_clusters
+    """ current_clusters = kmeans_clusters
     plot_clustering(normalized_dataset, current_clusters)
     for i in range(k1-1, k2-1, -1):
         current_clusters = fast_hierarchical(
@@ -423,7 +415,7 @@ if __name__ == '__main__':
             initial_clusters=current_clusters
         )
         plot_clustering(normalized_dataset, current_clusters)
-
+ """
 
     
         
