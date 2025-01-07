@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy
+import scipy.linalg
 import scipy.spatial
 import sklearn
 import sklearn.cluster
@@ -301,6 +302,39 @@ def plot_clustering(
     plt.grid(True)
     plt.show()
 
+def find_outliers_in_clustered_data(data, clustering):
+    cov_inv = scipy.linalg.inv(np.cov(data))
+    mh_distances = np.zeros(len(data))
+    for cluster in clustering:
+        cov_inv = scipy.linalg.inv(np.cov(data[cluster], rowvar=False))
+        print("calculating a cluster...")
+        centroid = np.mean(data[cluster], axis=0)
+        for index in cluster:
+            mh_distances[index] = scipy.spatial.distance.mahalanobis(data[index], centroid, cov_inv)
+    sorted_dists = np.sort(mh_distances)
+    # Plot outliers
+    plt.figure()
+    plt.plot(range(1, len(data)+1), sorted_dists, marker='o')
+    plt.title('Mahalanobis Distances in ascending order')
+    plt.show()
+
+    # set manually by looking at the plot above
+    threshold = 3.0
+    outliers = []
+    for index in range(len(data)):
+        if mh_distances[index] > threshold:
+            outliers.append(index)
+            for cluster in clustering:
+                if index in cluster:
+                    # delete index from cluster it used to be in
+                    cluster = np.delete(cluster, np.where(cluster == index))
+
+    clustering.append(outliers)
+
+    return outliers, clustering
+                    
+
+
 # The variable below is used to change the feature selection. Best clustering results 
 # were visually seen with a value of  [4, 5, 6, 7, 8, 9, 10, 14, 22, 23]. The variables
 # Global_nominal_cols, Global_continuous_cols, and Global_asymmetric_cols
@@ -371,7 +405,7 @@ Global_continuous_cols = [
 
 if __name__ == '__main__':
 
-    normalized_dataset = import_and_preprocess_data("train.csv")
+    normalized_dataset = import_and_preprocess_data("test.csv")
 
     normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
     
@@ -416,6 +450,8 @@ if __name__ == '__main__':
         )
         plot_clustering(normalized_dataset, current_clusters)
  """
+    outliers, clustering_with_outliers = find_outliers_in_clustered_data(normalized_dataset, hierarchical_output)
 
+    plot_clustering(normalized_dataset, clustering_with_outliers)
     
         
