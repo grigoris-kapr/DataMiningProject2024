@@ -11,6 +11,7 @@ import scipy.spatial
 import sklearn
 import sklearn.cluster
 import sklearn.decomposition
+import cupy as cp
 
 def normalize_vectors(
     dataset: np.ndarray,  # 2 dimensional ndarray, 
@@ -37,29 +38,31 @@ def normalize_vectors(
 
 name_to_lib = {
     'numpy' : np, 
-    # 'cupy' : cp
+    'cupy' : cp
 }
 
 def distance_metric_for_discreet_and_continuous_with_assymetric_support(
-    dataset: np.ndarray, #| cp.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
-    centers: np.ndarray, #| cp.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
-    nominal_attributes: list,  # a list containing the indices of nominal value attributes
-    continuous_attributes: list,  # a list containing the indices of continuous value attributes 
-    assymetric_attributes: list | None,  # a list containing the indices of assymetric value attributes
+    dataset: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
+    centers: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
+    nominal_attributes: list | None = None,  # a list containing the indices of nominal value attributes
+    continuous_attributes: list | None = None,  # a list containing the indices of continuous value attributes 
+    assymetric_attributes: list | None  = None,  # a list containing the indices of assymetric value attributes
     nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
-) -> np.ndarray  :#| cp.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
+) -> np.ndarray | cp.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
 
     if nplikelib is None:
         nplike = np
     else:
         nplike = name_to_lib[nplikelib]
     
-    datapoint_dim = dataset.shape[1]
+    number_of_datapoints = dataset.shape[0]
+    number_of_centers = centers.shape[0]
 
     # broadcast
+    datapoint_dim = nplike.array(dataset.shape[1])[None, None]
     dataset = dataset[:, None, :]
     centers = centers[None, :, :]
-    datapoint_dim = nplike.array(datapoint_dim)[None, None]
+    
 
     # if there are any assymetric attributes
     if assymetric_attributes is not None:
@@ -75,49 +78,83 @@ def distance_metric_for_discreet_and_continuous_with_assymetric_support(
 
     # calculate for each pair of datapoint - center the sum of all nominal 
     # attributes (1 value if they are different so they have distance of 1, 0 if they have the same value)
-    sum_of_nominal = nplike.sum(dataset[:, :, nominal_attributes] != centers[:, :, nominal_attributes], axis = 2)
+    if nominal_attributes is not None:
+        sum_of_nominal = nplike.sum(dataset[:, :, nominal_attributes] != centers[:, :, nominal_attributes], axis = 2)
+    else:
+        sum_of_nominal = nplike.zeros((number_of_datapoints, number_of_centers))
 
     # calculate for each pair of datapoint - center the sum of all continuous 
     # attributes (|x - y| is used for the continuous attribute distance metric and since each value is normalized to 
     # interval [0, 1], this will be the range of |x - y| for each attribute
-    sum_of_continuous = nplike.sum(nplike.abs(dataset[:, :, continuous_attributes] - centers[:, :, continuous_attributes]), axis = 2)
+    if continuous_attributes is not None:
+        sum_of_continuous = nplike.sum(nplike.abs(dataset[:, :, continuous_attributes] - centers[:, :, continuous_attributes]), axis = 2)
+    else:
+        sum_of_continuous = nplike.zeros((number_of_datapoints, number_of_centers))
 
     # for each datapoint - center distance combine the 2 partial sums for nominal and continuous and divide by number of attributes
     # that are not assymetric and both 0
     return (sum_of_nominal + sum_of_continuous) / number_of_attributes_that_count
 
-def optimized_kmeans(
+def our_similarity_metric(dataset, centers):
+    return distance_metric_for_discreet_and_continuous_with_assymetric_support(
+        dataset = dataset, 
+        centers = centers, 
+        nominal_attributes = [0, 1, 3, 4], 
+        continuous_attributes = np.setdiff1d(np.arange(dataset.shape[1]), np.array([0, 1, 3, 4])).tolist(), 
+        assymetric_attributes = None
+    )
+
+def kmeans(
     k: int, 
-    dataset: np.ndarray, 
+    dataset: np.ndarray | cp.ndarray, 
     dist_metric, 
+    tolerance: float = 1e-5, 
     iterations: int = None, 
     initial_centers: np.ndarray = None,  # None option picks the centers randomly
+    nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
 ):
+    if nplikelib is None:
+        nplike = np
+    else:
+        nplike = name_to_lib[nplikelib]
+
+    dataset_size = dataset.shape[0]
     datapoint_dim = dataset.shape[1]
 
     if initial_centers is None:
-        initial_centers = np.random.rand(k, datapoint_dim)
+        initial_centers = nplike.random.rand(k, datapoint_dim)
 
     current_centers = initial_centers
 
     while True:
 
-        datapoint_to_new_clusters = np.argmax(dist_metric(dataset, current_centers), axis = 1)
+        datapoint_to_new_clusters = nplike.argmin(dist_metric(dataset, current_centers, nplikelib), axis = 1)
 
-        new_centers = []
-        for i in range(k):
-            new_centers.append(
-                np.sum(dataset[np.where(datapoint_to_new_clusters == i)], axis = 0) / datapoint_dim
-            )
-        new_centers = np.array(new_centers)
+        new_centers = nplike.zeros_like(current_centers)
 
-        if (current_centers == new_centers).all():
-            return new_centers
+        datapoint_to_new_cluster_one_hot_like = nplike.zeros((dataset_size, k))
+        datapoint_to_new_cluster_one_hot_like[nplike.arange(dataset_size), datapoint_to_new_clusters] = 1
+
+        datapoints_per_cluster = nplike.sum(datapoint_to_new_cluster_one_hot_like, axis = 0)
+
+        empty_clusters = datapoints_per_cluster == 0
+
+        vector_of_each_cluster_sum = nplike.matmul(datapoint_to_new_cluster_one_hot_like.T, dataset)
+
+        new_centers[empty_clusters] = current_centers[empty_clusters]
+
+        new_centers[~empty_clusters] = vector_of_each_cluster_sum[~empty_clusters] / datapoints_per_cluster[~empty_clusters][:, None]
+
+        # if (nplike.abs(current_centers - new_centers) < tolerance).all():
+        if (nplike.linalg.norm(current_centers - new_centers) < tolerance):
+            return new_centers, datapoint_to_new_clusters
 
         if iterations is not None:
             iterations -= 1
             if iterations == 0:
-                return new_centers
+                return new_centers, datapoint_to_new_clusters
+            
+        current_centers = new_centers
 
 def clusters_kmeans_to_hierarchical(labels):
     num_clusters = max(labels) + 1
@@ -414,13 +451,15 @@ if __name__ == '__main__':
     k1 = 30 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
     k2 = 6
 
-    kmeans_output = sklearn.cluster.KMeans(
-        n_clusters= k1,
-        init='random',
-        n_init=20
-        ).fit(normalized_dataset)
+    _, kmeans_output = kmeans(
+        k1,
+        normalized_dataset,
+        tolerance=1e-4, 
+        # iterations = 10000, 
+        nplikelib = 'cupy'
+    )
 
-    kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output.labels_)
+    kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output)
 
     # Time and plot hierarchical alg. to bring the clusters down from k1 to k2
     start = time.time()
