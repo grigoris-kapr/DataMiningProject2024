@@ -152,9 +152,7 @@ def fast_hierarchical(
             data[i:i+1],
             data,
             nominal_attributes = [], 
-            continuous_attributes = [0, 1, 2],
-            # nominal_attributes=[0, 1, 3, 4], 
-            # continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            continuous_attributes = [0, 1, 2], # it is run after PCA, so they act as continuous
             assymetric_attributes=None
         )
         distance_matrix[i] = interim_distance_matrix[0]
@@ -237,15 +235,33 @@ def fast_hierarchical(
 
         # add now so as not to exclude in the earlier loops
         clusters[new_cluster_id] = new_cluster
+    
+    
+    return list(clusters.values())
 
-    return clusters
+# because Global_keep_columns may change, always use this to keep these lists with up-to-date indexes
+def current_attribute_selection_asym_nom_cont():
+    asymmetric_cols = []
+    nominal_cols = []
+    continuous_cols = []
+    for col_new_index in range(len(Global_keep_columns)):
+        original_index = Global_keep_columns[col_new_index]
+        if original_index in Global_asymmetric_cols:
+            asymmetric_cols.append(col_new_index)
+        if original_index in Global_continuous_cols:
+            continuous_cols.append(col_new_index)
+        if original_index in Global_nominal_cols:
+            nominal_cols.append(col_new_index)
+    
+    return asymmetric_cols, nominal_cols, continuous_cols
 
-if __name__ == '__main__':
-
-    dataset_with_extra_cols = pd.read_csv("test_5000.csv", header = 0).values
+def import_and_preprocess_data(filename):
+    dataset_with_extra_cols = pd.read_csv(filename, header = 0).values
 
     # discard columns not wanted
-    dataset = dataset_with_extra_cols[:, 2:-1]
+    dataset = dataset_with_extra_cols[:, Global_keep_columns]
+    # create the three lists below to pass as parameters for normalization
+    asymmetric_cols, nominal_cols, continuous_cols = current_attribute_selection_asym_nom_cont()
 
     # find non nan values
     not_nan_indices = []
@@ -257,38 +273,132 @@ if __name__ == '__main__':
                 not_nan_indices.append(i)
 
     dataset_without_nulls = dataset[not_nan_indices, :]
-    dataset_with_extra_cols_no_nan = dataset_with_extra_cols[not_nan_indices, :]
 
     normalized_dataset = normalize_vectors(
         dataset = dataset_without_nulls, 
-        nominal_attributes = [0, 1, 3, 4], 
-        continuous_attributes = [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        nominal_attributes = nominal_cols, 
+        continuous_attributes = continuous_cols
     )
 
-    # use slicing to focus PCA on only that
-    dataset_for_pca = normalized_dataset[:, [2, 3, 4, 5, 6, 7, 8, 12, 20, 21] ]
-    normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(dataset_for_pca)
-    print(dataset_for_pca.shape)
+    return normalized_dataset
+
+def plot_clustering(
+        data: np.ndarray, 
+        clustering: list[list[int]],
+        enfornce3D: bool = True # by default, runs PCA to limit the data to 3 dimentions.
+                                # setting this to False will produce a 3D visual of the data 
+                                # with whichever happen to be the first three dimentions
+    ):
+    # First, make sure data is 3 dimentional if enforce3D is enabled
+    if enfornce3D == True:
+        data = sklearn.decomposition.PCA(n_components=3).fit_transform(data)
+
+    plt.figure()
+    ax = plt.axes(projection ='3d')
+
+    cl_num = 0
+    marker = 'o'
+    for cluster in clustering:
+        # change marker every 10 clusters so that each cluster has a unique shape + color combination
+        # (matplotlib cycles between 10 colors if none are specified)
+        if cl_num == 10: marker = 's'
+        elif cl_num == 20: marker = 'v'
+        elif cl_num == 30: marker = 'x'
+        elif cl_num == 40: marker = ','
+        cl_num += 1
+        ax.scatter(data[cluster, 0], data[cluster, 1], data[cluster, 2], s=20, alpha=0.7, marker=marker)
+
+    plt.grid(True)
+    plt.show()
+
+# The variable below is used to change the feature selection. Best clustering results 
+# were visually seen with a value of  [4, 5, 6, 7, 8, 9, 10, 14, 22, 23]. The variables
+# Global_nominal_cols, Global_continuous_cols, and Global_asymmetric_cols
+# all need to be used as an intersection with this variable. 
+# E.g. nominal_attributes = list(Global_keep_columns.intersection(Global_nominal_cols))
+Global_keep_columns = [
+    # 0, # (no label)
+    # 1, # id
+    # 2, # Gender
+    # 3, # Customer Type
+    4, # Age
+    5, # Type of Travel
+    6, # Class
+    7, # Flight Distance
+    8, # Inflight wifi service
+    9, # Departure/Arrival time convenient
+    10, # Ease of Online booking
+    # 11, # Gate location
+    # 12, # Food and drink
+    # 13, # Online boarding
+    14, # Seat comfort
+    # 15, # Inflight entertainment
+    # 16, # On-board service
+    # 17, # Leg room service
+    # 18, # Baggage handling
+    # 19, # Checkin service
+    # 20, # Inflight service
+    # 21, # Cleanliness
+    22, # Departure Delay in Minutes
+    23, # Arrival Delay in Minutes
+    # 24  # satisfaction (pre-existing classification, always unused)
+]
+
+Global_asymmetric_cols = [
+    22, # Departure Delay in Minutes
+    23, # Arrival Delay in Minutes
+]
+
+Global_nominal_cols = [
+    1, # id
+    2, # Gender
+    3, # Customer Type
+    5, # Type of Travel
+    6, # Class
+    24  # satisfaction (pre-existing classification, always unused)
+]
+
+Global_continuous_cols = [
+    4, # Age
+    7, # Flight Distance
+    8, # Inflight wifi service
+    9, # Departure/Arrival time convenient
+    10, # Ease of Online booking
+    11, # Gate location
+    12, # Food and drink
+    13, # Online boarding
+    14, # Seat comfort
+    15, # Inflight entertainment
+    16, # On-board service
+    17, # Leg room service
+    18, # Baggage handling
+    19, # Checkin service
+    20, # Inflight service
+    21, # Cleanliness
+    22, # Departure Delay in Minutes
+    23, # Arrival Delay in Minutes
+]
+
+if __name__ == '__main__':
+
+    normalized_dataset = import_and_preprocess_data("test_5000.csv")
+
+    normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
     
-    """ optimized_kmeans(
-        k = 1, 
-        dataset = normalized_dataset, 
-        dist_metric = our_similarity_metric, 
-        iterations = 500
-    )  """
     # =================================================================================================
     # Where the magic happens
+    k1 = 10 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
+    k2 = 4
     kmeans_output = sklearn.cluster.KMeans(
-        n_clusters= 30, # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32),
-        init='random'
+        n_clusters= k1,
+        init='random',
+        n_init=20
         ).fit(normalized_dataset)
 
     kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output.labels_)
-    # print("Clusters from kmeans:")
-    # for i in range(len(kmeans_clusters)):
-    #     print(i, ": ", kmeans_clusters[i])
 
-    start = time.time()
+    # Time and plot hierarchical alg. to bring the clusters down from k1 to k2
+    """ start = time.time()
     hierarchical_output = fast_hierarchical(
         normalized_dataset, 
         clusters_num=3,
@@ -296,58 +406,24 @@ if __name__ == '__main__':
         initial_clusters=kmeans_clusters
     )
     end = time.time()
-    print(end - start)
-
-    print("Final output:")
-    # for cluster in hierarchical_output.items(): print(cluster)
-    print(len(normalized_dataset))
+    print(end - start) """
 
     # PLOT IT ALL
-    # PCA
-    pca_data_2D = sklearn.decomposition.PCA(n_components=2).fit_transform(normalized_dataset)
-    pca_data_3D = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
+    # Plot every iteration of the hierarchical algorithm, starting with 
+    # the 0-th (the output of k-means)
+    # cluster colors and symbols don't stay the same between iterations 
+    # (will probably need changing the plot_clustering function)
+    current_clusters = kmeans_clusters
+    plot_clustering(normalized_dataset, current_clusters)
+    for i in range(k1-1, k2-1, -1):
+        current_clusters = fast_hierarchical(
+            normalized_dataset,
+            clusters_num=i,
+            algorithm=False,
+            initial_clusters=current_clusters
+        )
+        plot_clustering(normalized_dataset, current_clusters)
 
 
-    plt.figure()
-    ax = plt.axes(projection ='3d')
-
-    cl_num = 0
-    marker = 'o'
-    for cluster in hierarchical_output.values():
-        if cl_num == 10:
-            marker = 's'
-        elif cl_num == 20:
-            marker = 'v'
-        elif cl_num == 30: 
-            marker = 'x'
-        elif cl_num == 40:
-            marker = ','
-        cl_num += 1
-        # for 2D
-        # plt.scatter(pca_data_2D[cluster, 0], pca_data_2D[cluster, 1], s=20, alpha=0.7, marker=marker)
-        # for 3D
-        ax.scatter(pca_data_3D[cluster, 0], pca_data_3D[cluster, 1], pca_data_3D[cluster, 2], s=20, alpha=0.7, marker=marker)
-
-    """ dbscan_out = sklearn.cluster.DBSCAN(eps=0.4, min_samples=150).fit(normalized_dataset).labels_
-    print(dbscan_out)
-    for label in range(max(dbscan_out)+1):
-        if label != -1:
-            print(cl_num)
-            if cl_num == 10:
-                marker = 's'
-            elif cl_num == 20:
-                marker = 'v'
-            cl_num += 1
-            data_to_use = pca_data_3D[dbscan_out == label]
-            ax.scatter(data_to_use[:, 0], data_to_use[:, 1], data_to_use[:, 2], s=20, alpha=0.7, marker=marker)
-
-    satisfied_indexes = np.where(dataset_with_extra_cols_no_nan[:, 24] == "satisfied")[0]
-    unsatisfied_indexes = np.where(dataset_with_extra_cols_no_nan[:, 24] == "neutral or dissatisfied")[0] """
-
-    # ax.scatter(pca_data_3D[satisfied_indexes, 0], pca_data_3D[satisfied_indexes, 1], pca_data_3D[satisfied_indexes, 2], s=20, alpha=0.7, marker=marker)
-
-    # ax.scatter(pca_data_3D[unsatisfied_indexes, 0], pca_data_3D[unsatisfied_indexes, 1], pca_data_3D[unsatisfied_indexes, 2], s=20, alpha=0.7, marker=marker)
-
-    plt.grid(True)
-    plt.show()
+    
         
