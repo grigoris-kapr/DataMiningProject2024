@@ -2,7 +2,7 @@ import os
 import math
 
 import numpy as np
-import cupy as cp
+# import cupy as cp
 import pandas as pd
 
 
@@ -13,20 +13,20 @@ path_to_dataset = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 
 
 
 name_to_lib = {
-    'numpy' : np, 
-    'cupy' : cp
+    'numpy' : np#, 
+#    'cupy' : cp
 }
 
 
 
 def distance_metric_for_discreet_and_continuous_with_assymetric_support(
-    dataset: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
-    centers: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
+    dataset: np.ndarray, #| cp.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
+    centers: np.ndarray, #| cp.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
     nominal_attributes: list,  # a list containing the indices of nominal value attributes
     continuous_attributes: list,  # a list containing the indices of continuous value attributes 
     assymetric_attributes: list | None,  # a list containing the indices of assymetric value attributes
     nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
-) -> np.ndarray | cp.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
+) -> np.ndarray: # | cp.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
 
     if nplikelib is None:
         nplike = np
@@ -80,7 +80,7 @@ def our_similarity_metric(dataset, centers):
 
 def normalize_vectors(
     dataset: np.ndarray,  # 2 dimensional ndarray, 
-    discreet_attributes: list, 
+    nominal_attributes: list, 
     continuous_attributes: list
 ) -> np.ndarray:
     
@@ -94,7 +94,7 @@ def normalize_vectors(
 
     normalized_dataset[:, continuous_attributes] = (dataset[:, continuous_attributes].astype(np.float32) - min_values) / (range_of_attributes)
 
-    for col in discreet_attributes:
+    for col in nominal_attributes:
         _, indices = np.unique(dataset[:, col], return_inverse = True)
         normalized_dataset[:, col] = indices.astype(np.float32)
 
@@ -158,7 +158,7 @@ def kmeans(
 
 def optimized_kmeans(
     k: int, 
-    dataset: np.ndarray | cp.ndarray, 
+    dataset: np.ndarray, #| cp.ndarray, 
     dist_metric, 
     tolerance: float = 1e-5, 
     iterations: int = None, 

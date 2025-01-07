@@ -2,16 +2,18 @@
 import heapq
 import math
 import time
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy
 import scipy.spatial
 import sklearn
 import sklearn.cluster
+import sklearn.decomposition
 
 def normalize_vectors(
     dataset: np.ndarray,  # 2 dimensional ndarray, 
-    discreet_attributes: list, 
+    nominal_attributes: list, 
     continuous_attributes: list
 ) -> np.ndarray:
     
@@ -25,7 +27,7 @@ def normalize_vectors(
 
     normalized_dataset[:, continuous_attributes] = (dataset[:, continuous_attributes].astype(np.float32) - min_values) / (range_of_attributes)
 
-    for col in discreet_attributes:
+    for col in nominal_attributes:
         _, indices = np.unique(dataset[:, col], return_inverse = True)
         normalized_dataset[:, col] = indices.astype(np.float32)
 
@@ -145,25 +147,22 @@ def fast_hierarchical(
     
     # Create distance matrix
     distance_matrix = np.full((n,n), np.inf, dtype=np.float16)
-    for i in range(n//2):
+    for i in range(n):
         interim_distance_matrix = distance_metric_for_discreet_and_continuous_with_assymetric_support(
+            data[i:i+1],
             data,
-            data[2*i:2*i+1],
-            nominal_attributes=[0, 1, 3, 4], 
-            continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            nominal_attributes = [], 
+            continuous_attributes = [0, 1, 2],
+            # nominal_attributes=[0, 1, 3, 4], 
+            # continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
             assymetric_attributes=None
         )
-        distance_matrix[2*i] = interim_distance_matrix[0]
-        distance_matrix[2*i+1]
-    if n%2 != 0:
-        distance_matrix[n-1] = distance_metric_for_discreet_and_continuous_with_assymetric_support(
-            data,
-            data[n-2:n-1],
-            nominal_attributes=[0, 1, 3, 4], 
-            continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-            assymetric_attributes=None
-        )[1]
-        print(distance_matrix[n-1])
+        distance_matrix[i] = interim_distance_matrix[0]
+        # print(distance_matrix[n-1])
+    print(distance_matrix[0])
+    print(distance_matrix[1])
+    print(distance_matrix[2])
+    print(distance_matrix[3])
 
 
     # add distances to a heap for complexity speed-up
@@ -243,10 +242,10 @@ def fast_hierarchical(
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv("train.csv", header = 0).values
+    dataset_with_extra_cols = pd.read_csv("test_5000.csv", header = 0).values
 
     # discard columns not wanted
-    dataset = dataset[:, 2:-1]
+    dataset = dataset_with_extra_cols[:, 2:-1]
 
     # find non nan values
     not_nan_indices = []
@@ -258,12 +257,18 @@ if __name__ == '__main__':
                 not_nan_indices.append(i)
 
     dataset_without_nulls = dataset[not_nan_indices, :]
+    dataset_with_extra_cols_no_nan = dataset_with_extra_cols[not_nan_indices, :]
 
     normalized_dataset = normalize_vectors(
         dataset = dataset_without_nulls, 
-        discreet_attributes = [0, 1, 3, 4], 
+        nominal_attributes = [0, 1, 3, 4], 
         continuous_attributes = [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
     )
+
+    # use slicing to focus PCA on only that
+    dataset_for_pca = normalized_dataset[:, [2, 3, 4, 5, 6, 7, 8, 12, 20, 21] ]
+    normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(dataset_for_pca)
+    print(dataset_for_pca.shape)
     
     """ optimized_kmeans(
         k = 1, 
@@ -271,22 +276,22 @@ if __name__ == '__main__':
         dist_metric = our_similarity_metric, 
         iterations = 500
     )  """
-
+    # =================================================================================================
+    # Where the magic happens
     kmeans_output = sklearn.cluster.KMeans(
-        n_clusters= np.ceil(np.sqrt(np.sqrt(len(normalized_dataset)))).astype(np.int32),
+        n_clusters= 30, # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32),
         init='random'
         ).fit(normalized_dataset)
 
     kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output.labels_)
-    print("Clusters from kmeans:")
-    for i in range(len(kmeans_clusters)):
-        print(i, ": ", kmeans_clusters[i])
+    # print("Clusters from kmeans:")
+    # for i in range(len(kmeans_clusters)):
+    #     print(i, ": ", kmeans_clusters[i])
 
-    # for cluster in kmeans_clusters: print(cluster)
     start = time.time()
     hierarchical_output = fast_hierarchical(
         normalized_dataset, 
-        clusters_num=5,
+        clusters_num=3,
         algorithm=True,
         initial_clusters=kmeans_clusters
     )
@@ -296,3 +301,53 @@ if __name__ == '__main__':
     print("Final output:")
     # for cluster in hierarchical_output.items(): print(cluster)
     print(len(normalized_dataset))
+
+    # PLOT IT ALL
+    # PCA
+    pca_data_2D = sklearn.decomposition.PCA(n_components=2).fit_transform(normalized_dataset)
+    pca_data_3D = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
+
+
+    plt.figure()
+    ax = plt.axes(projection ='3d')
+
+    cl_num = 0
+    marker = 'o'
+    for cluster in hierarchical_output.values():
+        if cl_num == 10:
+            marker = 's'
+        elif cl_num == 20:
+            marker = 'v'
+        elif cl_num == 30: 
+            marker = 'x'
+        elif cl_num == 40:
+            marker = ','
+        cl_num += 1
+        # for 2D
+        # plt.scatter(pca_data_2D[cluster, 0], pca_data_2D[cluster, 1], s=20, alpha=0.7, marker=marker)
+        # for 3D
+        ax.scatter(pca_data_3D[cluster, 0], pca_data_3D[cluster, 1], pca_data_3D[cluster, 2], s=20, alpha=0.7, marker=marker)
+
+    """ dbscan_out = sklearn.cluster.DBSCAN(eps=0.4, min_samples=150).fit(normalized_dataset).labels_
+    print(dbscan_out)
+    for label in range(max(dbscan_out)+1):
+        if label != -1:
+            print(cl_num)
+            if cl_num == 10:
+                marker = 's'
+            elif cl_num == 20:
+                marker = 'v'
+            cl_num += 1
+            data_to_use = pca_data_3D[dbscan_out == label]
+            ax.scatter(data_to_use[:, 0], data_to_use[:, 1], data_to_use[:, 2], s=20, alpha=0.7, marker=marker)
+
+    satisfied_indexes = np.where(dataset_with_extra_cols_no_nan[:, 24] == "satisfied")[0]
+    unsatisfied_indexes = np.where(dataset_with_extra_cols_no_nan[:, 24] == "neutral or dissatisfied")[0] """
+
+    # ax.scatter(pca_data_3D[satisfied_indexes, 0], pca_data_3D[satisfied_indexes, 1], pca_data_3D[satisfied_indexes, 2], s=20, alpha=0.7, marker=marker)
+
+    # ax.scatter(pca_data_3D[unsatisfied_indexes, 0], pca_data_3D[unsatisfied_indexes, 1], pca_data_3D[unsatisfied_indexes, 2], s=20, alpha=0.7, marker=marker)
+
+    plt.grid(True)
+    plt.show()
+        
