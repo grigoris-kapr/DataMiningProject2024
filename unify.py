@@ -135,20 +135,6 @@ def clusters_kmeans_to_hierarchical(labels):
 
     return clusters
 
-# custom distance function
-def dist(x, y, asymetric_attributes=[], nominal_attributes=[]):
-    sum_d = 0 # number of attributes considered
-    sum_dist = 0
-    for attr in range(22):
-        if not ((attr in asymetric_attributes and x[attr] == 0 and y[attr] == 0 ) or x[attr] == None or y[attr] == None):
-            sum_d += 1
-            if attr in nominal_attributes == True and x[attr] != y[attr]:
-                sum_dist += 1
-            elif not attr in nominal_attributes:
-                
-                sum_dist += abs( x[attr] - y[attr] ) 
-    return sum_dist / sum_d 
-
 def fast_hierarchical(
         data:np.ndarray,
         clusters_num, # the number of clusters at which the algorithm stops
@@ -158,13 +144,27 @@ def fast_hierarchical(
     n = len(data)
     
     # Create distance matrix
-    distance_matrix = distance_metric_for_discreet_and_continuous_with_assymetric_support(
-        data,
-        data,
-        nominal_attributes=[0, 1, 3, 4], 
-        continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-        assymetric_attributes=None
-    )
+    distance_matrix = np.full((n,n), np.inf, dtype=np.float16)
+    for i in range(n//2):
+        interim_distance_matrix = distance_metric_for_discreet_and_continuous_with_assymetric_support(
+            data,
+            data[2*i:2*i+1],
+            nominal_attributes=[0, 1, 3, 4], 
+            continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            assymetric_attributes=None
+        )
+        distance_matrix[2*i] = interim_distance_matrix[0]
+        distance_matrix[2*i+1]
+    if n%2 != 0:
+        distance_matrix[n-1] = distance_metric_for_discreet_and_continuous_with_assymetric_support(
+            data,
+            data[n-2:n-1],
+            nominal_attributes=[0, 1, 3, 4], 
+            continuous_attributes=[2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+            assymetric_attributes=None
+        )[1]
+        print(distance_matrix[n-1])
+
 
     # add distances to a heap for complexity speed-up
     # distances to be added depend on initial_clusters and are negative for complete link
@@ -243,7 +243,7 @@ def fast_hierarchical(
 
 if __name__ == '__main__':
 
-    dataset = pd.read_csv("test_5000.csv", header = 0).values
+    dataset = pd.read_csv("train.csv", header = 0).values
 
     # discard columns not wanted
     dataset = dataset[:, 2:-1]
@@ -265,8 +265,15 @@ if __name__ == '__main__':
         continuous_attributes = [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
     )
     
+    """ optimized_kmeans(
+        k = 1, 
+        dataset = normalized_dataset, 
+        dist_metric = our_similarity_metric, 
+        iterations = 500
+    )  """
+
     kmeans_output = sklearn.cluster.KMeans(
-        n_clusters=np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32),
+        n_clusters= np.ceil(np.sqrt(np.sqrt(len(normalized_dataset)))).astype(np.int32),
         init='random'
         ).fit(normalized_dataset)
 
@@ -287,11 +294,5 @@ if __name__ == '__main__':
     print(end - start)
 
     print("Final output:")
-    for cluster in hierarchical_output.items(): print(cluster)
-
-    """ optimized_kmeans(
-        k = 10, 
-        dataset = normalized_dataset, 
-        dist_metric = our_similarity_metric, 
-        iterations = 500
-    ) """
+    # for cluster in hierarchical_output.items(): print(cluster)
+    print(len(normalized_dataset))
