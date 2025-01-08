@@ -11,7 +11,6 @@ import scipy.spatial
 import sklearn
 import sklearn.cluster
 import sklearn.decomposition
-import cupy as cp
 
 def normalize_vectors(
     dataset: np.ndarray,  # 2 dimensional ndarray, 
@@ -36,25 +35,18 @@ def normalize_vectors(
 
     return normalized_dataset
 
-name_to_lib = {
-    'numpy' : np, 
-    'cupy' : cp
-}
-
 def distance_metric_for_discreet_and_continuous_with_assymetric_support(
-    dataset: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
-    centers: np.ndarray | cp.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
+    dataset: np.ndarray,  # 2 dimensional ndarray of shape (num of datapoints, num of attributes)
+    centers: np.ndarray,  # 2 dimensional ndarray of shape (num of centers, num of attributes)
     nominal_attributes: list | None = None,  # a list containing the indices of nominal value attributes
     continuous_attributes: list | None = None,  # a list containing the indices of continuous value attributes 
     assymetric_attributes: list | None  = None,  # a list containing the indices of assymetric value attributes
     nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
-) -> np.ndarray | cp.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
+) -> np.ndarray:  # 2 dimensional ndarray containing the similarity between each datapoint and each center, shape: (num of datapoint, num of centers)
 
-    if nplikelib is None:
-        nplike = np
-    else:
-        nplike = name_to_lib[nplikelib]
-    
+    # if nplikelib is None:
+    nplike = np
+
     number_of_datapoints = dataset.shape[0]
     number_of_centers = centers.shape[0]
 
@@ -95,28 +87,27 @@ def distance_metric_for_discreet_and_continuous_with_assymetric_support(
     # that are not assymetric and both 0
     return (sum_of_nominal + sum_of_continuous) / number_of_attributes_that_count
 
-def our_similarity_metric(dataset, centers):
+def our_similarity_metric(dataset, centers, nplikelib):
     return distance_metric_for_discreet_and_continuous_with_assymetric_support(
         dataset = dataset, 
         centers = centers, 
-        nominal_attributes = [0, 1, 3, 4], 
-        continuous_attributes = np.setdiff1d(np.arange(dataset.shape[1]), np.array([0, 1, 3, 4])).tolist(), 
+        nominal_attributes = [], 
+        continuous_attributes = [0, 1, 2], 
+        nplikelib=nplikelib,
         assymetric_attributes = None
     )
 
 def kmeans(
     k: int, 
-    dataset: np.ndarray | cp.ndarray, 
+    dataset: np.ndarray, 
     dist_metric, 
     tolerance: float = 1e-5, 
     iterations: int = None, 
     initial_centers: np.ndarray = None,  # None option picks the centers randomly
     nplikelib: str = None,  # either 'numpy' or 'cupy' depending on whether cuda is supported and code needs to run on a gpu
 ):
-    if nplikelib is None:
-        nplike = np
-    else:
-        nplike = name_to_lib[nplikelib]
+    # if nplikelib is None:
+    nplike = np
 
     dataset_size = dataset.shape[0]
     datapoint_dim = dataset.shape[1]
@@ -146,7 +137,7 @@ def kmeans(
         new_centers[~empty_clusters] = vector_of_each_cluster_sum[~empty_clusters] / datapoints_per_cluster[~empty_clusters][:, None]
 
         # if (nplike.abs(current_centers - new_centers) < tolerance).all():
-        if (nplike.linalg.norm(current_centers - new_centers) < tolerance):
+        if nplike.linalg.norm(current_centers - new_centers) < tolerance:
             return new_centers, datapoint_to_new_clusters
 
         if iterations is not None:
@@ -161,7 +152,9 @@ def clusters_kmeans_to_hierarchical(labels):
     clusters = [ [] for _ in range(num_clusters) ]
     for i in range(len(labels)):
         clusters[labels[i]].append(i)
-
+    for i in range(num_clusters-1, -1, -1):
+        if len(clusters[i]) == 0:
+            del clusters[i]
     return clusters
 
 def fast_hierarchical(
@@ -185,7 +178,6 @@ def fast_hierarchical(
         distance_matrix[i] = interim_distance_matrix[0]
     end_dist = time.time()
     print("Dist. Matrix calculation time: ", end_dist - start_dist)
-
 
     # add distances to a heap for complexity speed-up
     # distances to be added depend on initial_clusters and are negative for complete link
@@ -264,7 +256,6 @@ def fast_hierarchical(
         # add now so as not to exclude in the earlier loops
         clusters[new_cluster_id] = new_cluster.copy()
     
-    
     return list(clusters.values())
 
 # because Global_keep_columns may change, always use this to keep these lists with up-to-date indexes
@@ -283,11 +274,19 @@ def current_attribute_selection_asym_nom_cont():
     
     return asymmetric_cols, nominal_cols, continuous_cols
 
-def import_and_preprocess_data(filename):
+def import_and_preprocess_data(
+        filename: str,
+        limit_n: int | None = None
+    ):
     dataset_with_extra_cols = pd.read_csv(filename, header = 0).values
 
-    # discard columns not wanted
-    dataset = dataset_with_extra_cols[:, Global_keep_columns]
+    # discard rows & columns not wanted
+    if limit_n == None:
+        limit_n = len(dataset_with_extra_cols)
+    elif limit_n > len(dataset_with_extra_cols):
+        limit_n = len(dataset_with_extra_cols)
+        print("Requested data length larger than dataset. Limiting n to ", limit_n)
+    dataset = dataset_with_extra_cols[:limit_n, Global_keep_columns]
     # create the three lists below to pass as parameters for normalization
     asymmetric_cols, nominal_cols, continuous_cols = current_attribute_selection_asym_nom_cont()
 
@@ -334,20 +333,25 @@ def plot_clustering(
         elif cl_num == 30: marker = 'x'
         elif cl_num == 40: marker = ','
         cl_num += 1
-        ax.scatter(data[cluster, 0], data[cluster, 1], data[cluster, 2], s=20, alpha=0.7, marker=marker)
+        ax.scatter(data[cluster, 0], data[cluster, 1], data[cluster, 2], s=3, alpha=0.7, marker=marker)
 
     plt.grid(True)
     plt.show()
 
 def find_outliers_in_clustered_data(data, clustering):
-    cov_inv = scipy.linalg.inv(np.cov(data))
+    outliers = []
     mh_distances = np.zeros(len(data))
     for cluster in clustering:
-        cov_inv = scipy.linalg.inv(np.cov(data[cluster], rowvar=False))
-        print("calculating a cluster...")
-        centroid = np.mean(data[cluster], axis=0)
-        for index in cluster:
-            mh_distances[index] = scipy.spatial.distance.mahalanobis(data[index], centroid, cov_inv)
+        if len(cluster) > 2:
+            print("calculating a cluster...")
+            cov_inv = scipy.linalg.inv(np.cov(data[cluster], rowvar=False))
+            centroid = np.mean(data[cluster], axis=0)
+            for index in cluster:
+                mh_distances[index] = scipy.spatial.distance.mahalanobis(data[index], centroid, cov_inv)
+        else:
+            for i in cluster:
+                outliers.append(i)
+
     sorted_dists = np.sort(mh_distances)
     # Plot outliers
     plt.figure()
@@ -357,14 +361,14 @@ def find_outliers_in_clustered_data(data, clustering):
 
     # set manually by looking at the plot above
     threshold = 3.0
-    outliers = []
     for index in range(len(data)):
         if mh_distances[index] > threshold:
             outliers.append(index)
-            for cluster in clustering:
+            for i in range(len(clustering)):
                 if index in cluster:
                     # delete index from cluster it used to be in
-                    cluster = np.delete(cluster, np.where(cluster == index))
+                    clustering[i] = np.delete(clustering[i], np.where(clustering[i] == index)[0])
+                    break
 
     clustering.append(outliers)
 
@@ -442,22 +446,25 @@ Global_continuous_cols = [
 
 if __name__ == '__main__':
 
-    normalized_dataset = import_and_preprocess_data("test.csv")
+    max_n = 250000
+    normalized_dataset = import_and_preprocess_data("train.csv",limit_n=max_n)
 
     normalized_dataset = sklearn.decomposition.PCA(n_components=3).fit_transform(normalized_dataset)
-    
+    # plot all points
+    plot_clustering(normalized_dataset, [ [i for i in range(len(normalized_dataset))]])
+
     # =================================================================================================
     # Where the magic happens
-    k1 = 30 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
+    k1 = 50 # np.ceil(np.sqrt(len(normalized_dataset))).astype(np.int32)
     k2 = 6
 
     _, kmeans_output = kmeans(
-        k1,
-        normalized_dataset,
-        dist_metric=our_similarity_metric
+        k=k1,
+        dataset=normalized_dataset,
+        dist_metric=our_similarity_metric,
         tolerance=1e-4, 
         # iterations = 10000, 
-        nplikelib = 'cupy'
+        nplikelib = 'np'
     )
 
     kmeans_clusters = clusters_kmeans_to_hierarchical(kmeans_output)
@@ -490,8 +497,11 @@ if __name__ == '__main__':
         )
         plot_clustering(normalized_dataset, current_clusters)
  """
+    # Find outliers using Mahalanobis
+    # If there are single or double point clusters, they are left as is
+    # However, they are probably outliers
     outliers, clustering_with_outliers = find_outliers_in_clustered_data(normalized_dataset, hierarchical_output)
 
     plot_clustering(normalized_dataset, clustering_with_outliers)
     
-        
+     

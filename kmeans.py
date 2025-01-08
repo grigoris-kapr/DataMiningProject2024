@@ -111,7 +111,7 @@ def distance_metric_for_discreet_and_continuous_with_assymetric_support(
 
 
 
-def our_similarity_metric(dataset, centers):
+def our_similarity_metric(dataset, centers, nplikelib):
     return distance_metric_for_discreet_and_continuous_with_assymetric_support(
         dataset = dataset, 
         centers = centers, 

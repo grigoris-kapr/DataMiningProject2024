@@ -55,8 +55,8 @@ for i in range(num_of_reps):
     km_out = sklearn.cluster.KMeans(n_clusters=i+1,init='random',n_init=10).fit(normalized_dataset)
     kmeans_sse.append(km_out.inertia_)
 
-db_out = sklearn.cluster.DBSCAN(eps=1.0, min_samples=)
-filtered_dataset = 
+# db_out = sklearn.cluster.DBSCAN(eps=1.0, min_samples=)
+# filtered_dataset = 
 
 plt.figure(figsize=(10, 6))
 plt.plot(range(1, num_of_reps+1), kmeans_sse, marker='o')
