@@ -454,6 +454,7 @@ if __name__ == '__main__':
     _, kmeans_output = kmeans(
         k1,
         normalized_dataset,
+        dist_metric=our_similarity_metric
         tolerance=1e-4, 
         # iterations = 10000, 
         nplikelib = 'cupy'
